@@ -1,0 +1,2176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Bird Migration LED Route Map - CETTS & RRBCEA</title>
+    
+    <!-- =========================================================================
+         1. OPEN-SOURCE MAP LIBRARY (LEAFLET.JS)
+         ========================================================================= -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* =========================================================================
+           2. DARK THEME & BIRD ROUTE COLORS (MATCHING EXCEL SHEET)
+           ========================================================================= */
+        :root {
+            --bg-dark: #090d16;
+            --panel-bg: #0f1623;
+            --card-bg: #161f30;
+            --border-subtle: #263248;
+            --text-light: #f8fafc;
+            --text-dim: #94a3b8;
+
+            /* Colors from your Excel Sheet ('Colour Code' column) */
+            --color-falcon: #ef4444;    /* Red         - Amur Falcon */
+            --color-canary: #3b82f6;    /* Dark Blue   - Gray-headed Canary-Flycatcher */
+            --color-starling: #22c55e;  /* Green       - Chestnut-tailed Starling */
+            --color-flamingo: #ec4899;  /* Pink        - Greater Flamingo */
+            --color-drongo: #a855f7;    /* Purple      - Ashy Drongo */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header Bar */
+        header {
+            background: #090d16;
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0.7rem 1.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .brand-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .badge-cetts {
+            background: #ef6f20;
+            border-radius: 6px;
+            height: 34px;
+            padding: 2px 9px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: 0 2px 6px rgba(239, 111, 32, 0.35);
+        }
+
+        .badge-cetts img {
+            height: 100%;
+            width: auto;
+            display: block;
+        }
+
+        .badge-rrbcea {
+            background: #161f30;
+            border: 1px solid #334155;
+            color: #cbd5e1;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .header-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        /* Main Split Layout */
+        .app-container {
+            display: grid;
+            grid-template-columns: 1fr 430px;
+            flex: 1;
+            height: calc(100vh - 52px);
+        }
+
+        @media (max-width: 950px) {
+            body { overflow-y: auto; height: auto; }
+            .app-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 58vh 1fr;
+                height: auto;
+            }
+        }
+
+        #map {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #aad3df;
+            z-index: 1;
+        }
+
+        /* Clean Light-Themed Map Controls & Popups matching the Esri World Street Map */
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+        }
+        .leaflet-popup-close-button {
+            color: #64748b !important;
+        }
+
+        /* Button-Shaped "Did You Know?" Trigger on Map */
+        .map-trivia-wrapper {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            z-index: 800;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            max-width: 300px;
+        }
+
+        .btn-did-you-know {
+            background: #0f172a;
+            color: #ffffff;
+            border: 2px solid #38bdf8;
+            border-radius: 999px;
+            padding: 8px 15px;
+            font-size: 0.84rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.35);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.14s ease, box-shadow 0.15s ease;
+        }
+
+        .btn-did-you-know:hover {
+            transform: translateY(-1px) scale(1.02);
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.45);
+        }
+
+        .btn-did-you-know:active {
+            transform: scale(0.96);
+        }
+
+        .map-trivia-card {
+            display: none;
+            background: #ffffff;
+            color: #0f172a;
+            border: 2px solid #38bdf8;
+            border-radius: 16px;
+            padding: 11px 14px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+            width: 100%;
+            animation: popIn 0.16s ease-out;
+        }
+
+        .map-trivia-card.open {
+            display: block;
+        }
+
+        @keyframes popIn {
+            from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .map-trivia-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 5px;
+        }
+
+        .map-trivia-text {
+            font-size: 0.85rem;
+            line-height: 1.38;
+            color: #1e293b;
+            font-weight: 500;
+            margin-bottom: 9px;
+        }
+
+        .map-trivia-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-next-trivia {
+            background: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 999px;
+            padding: 6px 13px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.15s ease, transform 0.12s ease;
+        }
+
+        .btn-next-trivia:hover {
+            opacity: 0.92;
+        }
+
+        .btn-next-trivia:active {
+            transform: scale(0.95);
+        }
+
+        .btn-close-trivia {
+            background: transparent;
+            color: #64748b;
+            border: none;
+            font-size: 0.76rem;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+
+        .btn-close-trivia:hover {
+            color: #0f172a;
+        }
+
+        /* Side Control Panel */
+        .side-panel {
+            background: var(--panel-bg);
+            border-left: 1px solid var(--border-subtle);
+            padding: 1rem 1.15rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .section-title {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 0.45rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* 5 Bird Buttons */
+        .bird-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .btn-bird {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-bg);
+            border: 1.5px solid var(--border-subtle);
+            border-radius: 9px;
+            padding: 0.58rem 0.9rem;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+
+        .btn-bird:hover {
+            border-color: #475569;
+            transform: translateX(3px);
+        }
+
+        .btn-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .route-count-tag {
+            font-size: 0.7rem;
+            padding: 2px 7px;
+            border-radius: 99px;
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--text-dim);
+            font-weight: 500;
+        }
+
+        .color-dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .btn-bird[data-bird="falcon"].active   { border-color: var(--color-falcon);   background: rgba(239, 68, 68, 0.16); }
+        .btn-bird[data-bird="canary"].active   { border-color: var(--color-canary);   background: rgba(59, 130, 246, 0.16); }
+        .btn-bird[data-bird="starling"].active { border-color: var(--color-starling); background: rgba(34, 197, 94, 0.16); }
+        .btn-bird[data-bird="flamingo"].active { border-color: var(--color-flamingo); background: rgba(236, 72, 153, 0.16); }
+        .btn-bird[data-bird="drongo"].active   { border-color: var(--color-drongo);   background: rgba(234, 179, 8, 0.16); }
+
+        /* Bird Photo & Info Card */
+        .bird-profile-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 320px;
+        }
+
+        .bird-photo-wrapper {
+            position: relative;
+            width: 100%;
+            height: 190px;
+            background: #090d16;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .bird-photo-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center 25%;
+            display: block;
+            transition: transform 0.4s ease;
+        }
+
+        .bird-photo-wrapper:hover img {
+            transform: scale(1.04);
+        }
+
+        .photo-caption {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(9, 13, 22, 0.96));
+            padding: 1.5rem 0.9rem 0.55rem 0.9rem;
+        }
+
+        .photo-caption h2 {
+            font-size: 1.15rem;
+            line-height: 1.2;
+        }
+
+        .sci-name {
+            font-style: italic;
+            color: #cbd5e1;
+            font-size: 0.8rem;
+        }
+
+        .card-body {
+            padding: 0.85rem 0.95rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            overflow-y: auto;
+        }
+
+        .status-pill {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.76rem;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #e2e8f0;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .route-group-header {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.04);
+            margin-top: 6px;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .waypoint-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .waypoint-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            background: #0b111e;
+            padding: 0.42rem 0.6rem;
+            border-radius: 6px;
+            border: 1px solid #1e293b;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+
+        .waypoint-item:hover {
+            border-color: #475569;
+        }
+
+        .wp-index {
+            font-size: 0.68rem;
+            font-weight: 700;
+            background: #161f30;
+            color: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            min-width: 24px;
+            text-align: center;
+        }
+
+        .wp-place {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .wp-coords {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            font-family: monospace;
+        }
+
+        /* =========================================================================
+           MOBILE-FIRST RESPONSIVENESS & TOUCH ERGONOMICS ENHANCEMENTS
+           ========================================================================= */
+        html, body {
+            max-width: 100%;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: rgba(56, 189, 248, 0.22);
+        }
+
+        button, .btn-bird, .waypoint-item, .btn-did-you-know, .btn-next-trivia, .btn-close-trivia {
+            touch-action: manipulation;
+        }
+
+        @media (max-width: 950px) {
+            body {
+                overflow-y: auto;
+                height: auto;
+                min-height: 100dvh;
+            }
+
+            header {
+                padding: 0.55rem 0.85rem;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            .badge-cetts {
+                height: 28px;
+                padding: 2px 7px;
+            }
+
+            .badge-rrbcea {
+                font-size: 0.72rem;
+                padding: 3px 8px;
+            }
+
+            .header-subtitle {
+                width: 100%;
+                font-size: 0.74rem;
+                line-height: 1.25;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .app-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(320px, 50dvh) auto;
+                height: auto;
+                min-height: calc(100dvh - 64px);
+            }
+
+            #map {
+                min-height: 320px;
+                height: 50dvh;
+            }
+
+            .map-trivia-wrapper {
+                top: 10px;
+                right: 10px;
+                max-width: calc(100vw - 20px);
+            }
+
+            .btn-did-you-know {
+                padding: 7px 12px;
+                font-size: 0.78rem;
+                min-height: 36px;
+            }
+
+            .map-trivia-card {
+                max-width: min(290px, calc(100vw - 20px));
+                padding: 10px 12px;
+            }
+
+            .side-panel {
+                border-left: none;
+                border-top: 1px solid var(--border-subtle);
+                padding: 0.85rem 0.9rem 1.25rem;
+                gap: 0.85rem;
+                overflow-y: visible;
+            }
+
+            .bird-buttons {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.45rem;
+            }
+
+            .bird-buttons .btn-bird:first-child {
+                grid-column: 1 / -1;
+            }
+
+            .btn-bird {
+                min-height: 44px;
+                padding: 0.55rem 0.7rem;
+                border-radius: 9px;
+            }
+
+            .btn-bird:hover {
+                transform: none;
+            }
+
+            .btn-info {
+                gap: 7px;
+                font-size: 0.8rem;
+                line-height: 1.2;
+            }
+
+            .route-count-tag {
+                font-size: 0.65rem;
+                padding: 2px 6px;
+                flex-shrink: 0;
+            }
+
+            .bird-profile-card {
+                min-height: auto;
+                flex: none;
+            }
+
+            .bird-photo-wrapper {
+                height: 175px;
+            }
+
+            .photo-caption h2 {
+                font-size: 1.05rem;
+            }
+
+            .waypoint-list {
+                max-height: 260px;
+            }
+
+            .waypoint-item {
+                min-height: 42px;
+                padding: 0.48rem 0.65rem;
+                font-size: 0.78rem;
+            }
+
+            .leaflet-popup-content {
+                margin: 10px 12px;
+                font-size: 0.82rem;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .bird-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .bird-buttons .btn-bird:first-child {
+                grid-column: auto;
+            }
+
+            .wp-coords {
+                display: none;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand-container">
+            <span class="badge-cetts" title="CETTS Learning"><img src="data:image/png;base64,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" alt="CETTS Learning" /></span>
+            <span class="badge-rrbcea">RRBCEA Interactive Flyway Map</span>
+        </div>
+        <div class="header-subtitle">Interactive Flyway Map • Curved Equidistant LED Routes • Click Any Node for Sanctuary Details</div>
+    </header>
+
+    <div class="app-container">
+        <!-- Dark-Themed Open-Source Map -->
+        <div id="map">
+            <div class="map-trivia-wrapper" id="mapTriviaWrapper">
+                <button class="btn-did-you-know" id="btnDidYouKnow" type="button" onclick="handleDidYouKnowClick(event)">
+                    <span>💡 Did You Know?</span>
+                    <span id="triviaBadge" style="font-size:0.7rem; opacity:0.85;">1/3</span>
+                </button>
+                <div class="map-trivia-card" id="mapTriviaCard" onclick="event.stopPropagation()">
+                    <div class="map-trivia-header" id="mapTriviaHeader">
+                        <span id="mapTriviaSpecies">Fact #1</span>
+                        <button class="btn-close-trivia" type="button" onclick="closeTriviaCard(event)">✕</button>
+                    </div>
+                    <div class="map-trivia-text" id="mapTriviaText">Click "Did You Know?" for fun bird facts!</div>
+                    <div class="map-trivia-footer">
+                        <span style="font-size:0.7rem; color:#64748b;" id="mapTriviaCounter">Tap for next</span>
+                        <button class="btn-next-trivia" id="btnNextTrivia" type="button" onclick="cycleTriviaFact(event)">Next Trivia ➔</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Control Panel -->
+        <div class="side-panel">
+            <div>
+                <div class="section-title">Select Bird Species (5 Flyways)</div>
+                <div class="bird-buttons">
+                    <!-- 1. Amur Falcon (Red - 1 Route) -->
+                    <button class="btn-bird" data-bird="falcon" onclick="selectBird('falcon')">
+                        <div class="btn-info">
+                            <span class="color-dot" style="background: var(--color-falcon); color: var(--color-falcon);"></span>
+                            <span>Amur Falcon</span>
+                        </div>
+                        <span class="route-count-tag">1 Route</span>
+                    </button>
+
+                    <!-- 2. Gray-headed Canary-Flycatcher (Dark Blue - 2 Routes) -->
+                    <button class="btn-bird" data-bird="canary" onclick="selectBird('canary')">
+                        <div class="btn-info">
+                            <span class="color-dot" style="background: var(--color-canary); color: var(--color-canary);"></span>
+                            <span>Gray-headed Canary-Flycatcher</span>
+                        </div>
+                        <span class="route-count-tag">2 Routes</span>
+                    </button>
+
+                    <!-- 3. Chestnut-tailed Starling (Green - 2 Routes) -->
+                    <button class="btn-bird" data-bird="starling" onclick="selectBird('starling')">
+                        <div class="btn-info">
+                            <span class="color-dot" style="background: var(--color-starling); color: var(--color-starling);"></span>
+                            <span>Chestnut-tailed Starling</span>
+                        </div>
+                        <span class="route-count-tag">2 Routes</span>
+                    </button>
+
+                    <!-- 4. Greater Flamingo (Pink - 2 Routes) -->
+                    <button class="btn-bird" data-bird="flamingo" onclick="selectBird('flamingo')">
+                        <div class="btn-info">
+                            <span class="color-dot" style="background: var(--color-flamingo); color: var(--color-flamingo);"></span>
+                            <span>Greater Flamingo</span>
+                        </div>
+                        <span class="route-count-tag">2 Routes</span>
+                    </button>
+
+                    <!-- 5. Ashy Drongo (Yellow - 2 Routes) -->
+                    <button class="btn-bird" data-bird="drongo" onclick="selectBird('drongo')">
+                        <div class="btn-info">
+                            <span class="color-dot" style="background: var(--color-drongo); color: var(--color-drongo);"></span>
+                            <span>Ashy Drongo</span>
+                        </div>
+                        <span class="route-count-tag">2 Routes</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Bird Photo & Active Route Card -->
+            <div class="bird-profile-card">
+                <div class="bird-photo-wrapper">
+                    <img id="birdPhoto" src="" alt="Selected Bird Photo" />
+                    <div class="photo-caption">
+                        <h2 id="birdName">Select a Bird</h2>
+                        <div class="sci-name" id="birdSci">Click any species above</div>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <div class="status-pill" id="directionStatus">
+                        <span>LED Flow: Waiting for selection...</span>
+                    </div>
+
+                    <div>
+                        <div class="section-title">
+                            <span>Pinpoint Sanctuaries & Reserves</span>
+                            <span id="stopCounter">0 Stops</span>
+                        </div>
+                        <div class="waypoint-list" id="waypointList">
+                            <div class="waypoint-item">No route active yet.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        /* =========================================================================
+           SECTION A: DARK-THEMED INTERACTIVE MAP
+           Uses CartoDB Dark Matter tiles (free, open-source, no API key) so the
+           warm-white base LEDs and glowing colored LED pairs pop with high contrast!
+           ========================================================================= */
+        const map = L.map('map', {
+            center: [18.0, 74.0],
+            zoom: 3,
+            zoomControl: true
+        });
+
+        // Esri World Street Map (Exact light-toned map from previous version, free & no API key required)
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Sources: Esri, USGS, NOAA | CETTS & RRBCEA',
+            maxZoom: 18
+        }).addTo(map);
+
+
+        /* =========================================================================
+           SECTION B: LED ANIMATION & CURVE SETTINGS (EASY TO EDIT!)
+           1. speedMs          -> Speed of the moving colored LED pair (Lower = Faster)
+           2. movingLedCount   -> Number of colored LEDs moving together (2 = pair)
+           3. warmWhiteColor   -> Warm white color of the stagnant equidistant LEDs
+           4. dotSpacingDeg    -> Distance between equidistant dots along the curve
+                                  (Smaller = more dots packed closer together)
+           5. curveTension     -> Smoothness of the curved spline (0.35 = natural curve)
+           ========================================================================= */
+        const LED_SETTINGS = {
+            speedMs: 175,                // 1. SPEED: Milliseconds per step (Lower = Faster, e.g., 90; Higher = Slower, e.g., 250)
+            movingLedCount: 2,           // 2. NUMBER OF MOVING LEDs: Pair of 2 colored LEDs moving to-and-fro
+            warmWhiteColor: "#fff8e7",   // 3. WARM WHITE stagnant LED dots
+            pinpointBorder: "#1e293b",   // Crisp dark ring so warm-white LEDs stand out clearly on light map
+            stagnantRadius: 4.6,         // Radius of stagnant warm-white LED dots
+            pinpointRadius: 6.5,         // Slightly larger radius for your exact Excel sanctuary coordinates
+            movingLedRadius: 8.8,        // Radius of the moving primary-colored LED pair
+            dotSpacingDeg: 3.2,          // Increased equidistant spacing between LED dots along the smooth curve
+            curveTension: 0.35           // Smooth Catmull-Rom curve tension (0 = straight lines, 0.35 = curved)
+        };
+
+
+        /* =========================================================================
+           SECTION C: EXACT COORDINATES FROM YOUR EXCEL SHEET ('All Map coordinates.xlsx')
+           - Includes all 133 sanctuary/reserve coordinates across all 5 species.
+           - Species with 2 routes activate BOTH routes simultaneously when clicked!
+           - Colors follow your Excel sheet:
+             * Amur Falcon: Red (#ef4444) - Route 1
+             * Gray-headed Canary-Flycatcher: Dark/Royal Blue (#3b82f6) - Routes 1 & 2
+             * Chestnut-tailed Starling: Green (#22c55e) - Routes 1 & 2
+             * Greater Flamingo: Pink (#ec4899) - Routes 1 & 2
+             * Ashy Drongo: Purple (#a855f7) - Routes 1 & 2
+           ========================================================================= */
+        const BIRD_ROUTES = {
+            "falcon": {
+                        "name": "Amur Falcon",
+                        "sciName": "Falco amurensis",
+                        "trivia": [
+                            "Flies ~22,000 km round-trip—including 3,000+ km non-stop over the Arabian Sea!",
+                            "Over 1 million gather at Nagaland's Doyang Reservoir each October.",
+                            "Catches swarming termites and dragonflies mid-flight like airborne snacks."
+                        ],
+                        "color": "#ef4444",
+                        "photo": "https://commons.wikimedia.org/wiki/Special:FilePath/Amur_Falcon_(Falco_amurensis)_male.jpg?width=800",
+                        "fallbackPhoto": "https://commons.wikimedia.org/wiki/Special:FilePath/Falco_amurensis_-Mongolia-8.jpg?width=800",
+                        "routes": [
+                                    {
+                                                "routeName": "Amur Falcon Route 1",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 1,
+                                                                        "place": "Ulaanbataar(Protected Area)",
+                                                                        "lat": 47.860877,
+                                                                        "lng": 106.679285
+                                                            },
+                                                            {
+                                                                        "sr": 2,
+                                                                        "place": "Dalai Lake Nature Reserve",
+                                                                        "lat": 48.9333,
+                                                                        "lng": 117.4333
+                                                            },
+                                                            {
+                                                                        "sr": 3,
+                                                                        "place": "Zhalong Nature Reserve",
+                                                                        "lat": 47.2,
+                                                                        "lng": 124.25
+                                                            },
+                                                            {
+                                                                        "sr": 4,
+                                                                        "place": "Momoge Nature Reserve",
+                                                                        "lat": 45.9,
+                                                                        "lng": 123.75
+                                                            },
+                                                            {
+                                                                        "sr": 5,
+                                                                        "place": "Huanzidong Reservior",
+                                                                        "lat": 42.2146,
+                                                                        "lng": 122.5527
+                                                            },
+                                                            {
+                                                                        "sr": 6,
+                                                                        "place": "Gageodo Island",
+                                                                        "lat": 34.07139,
+                                                                        "lng": 125.1131
+                                                            },
+                                                            {
+                                                                        "sr": 7,
+                                                                        "place": "Chongming Dongtang Nature Reserve",
+                                                                        "lat": 31.5167,
+                                                                        "lng": 121.9667
+                                                            },
+                                                            {
+                                                                        "sr": 8,
+                                                                        "place": "Poyang Lake Nature Reserve",
+                                                                        "lat": 29.1667,
+                                                                        "lng": 116.0
+                                                            },
+                                                            {
+                                                                        "sr": 9,
+                                                                        "place": "D'Ering Wildlife Sanctuary",
+                                                                        "lat": 27.9583,
+                                                                        "lng": 95.4417
+                                                            },
+                                                            {
+                                                                        "sr": 10,
+                                                                        "place": "Dulung Reserve Forest",
+                                                                        "lat": 27.445,
+                                                                        "lng": 94.213
+                                                            },
+                                                            {
+                                                                        "sr": 11,
+                                                                        "place": "Doyang Reservior(Falcon Capital)",
+                                                                        "lat": 26.22,
+                                                                        "lng": 94.307
+                                                            },
+                                                            {
+                                                                        "sr": 12,
+                                                                        "place": "Chiuluan Roosting Site",
+                                                                        "lat": 25.15,
+                                                                        "lng": 94.1088
+                                                            },
+                                                            {
+                                                                        "sr": 13,
+                                                                        "place": "Dampa Tiger Reserve",
+                                                                        "lat": 23.6272,
+                                                                        "lng": 92.3711
+                                                            },
+                                                            {
+                                                                        "sr": 14,
+                                                                        "place": "Hazarikhil Wildlife Sanctuary",
+                                                                        "lat": 22.6667,
+                                                                        "lng": 91.6667
+                                                            },
+                                                            {
+                                                                        "sr": 15,
+                                                                        "place": "Tengragiri Wildlife Sanctuary",
+                                                                        "lat": 21.9635,
+                                                                        "lng": 89.9643
+                                                            },
+                                                            {
+                                                                        "sr": 16,
+                                                                        "place": "Karlapat Wildlife Sanctuary",
+                                                                        "lat": 19.6736,
+                                                                        "lng": 83.1419
+                                                            },
+                                                            {
+                                                                        "sr": 17,
+                                                                        "place": "Vetal Tekdi",
+                                                                        "lat": 18.5256,
+                                                                        "lng": 73.81529
+                                                            },
+                                                            {
+                                                                        "sr": 18,
+                                                                        "place": "Tsavo East National Park",
+                                                                        "lat": -2.7833,
+                                                                        "lng": 38.7667
+                                                            },
+                                                            {
+                                                                        "sr": 19,
+                                                                        "place": "Serengeti National Park",
+                                                                        "lat": -2.3333,
+                                                                        "lng": 34.8333
+                                                            },
+                                                            {
+                                                                        "sr": 20,
+                                                                        "place": "Lake Malawi",
+                                                                        "lat": -11.43029,
+                                                                        "lng": 34.55253
+                                                            },
+                                                            {
+                                                                        "sr": 21,
+                                                                        "place": "Gorongosa National Park",
+                                                                        "lat": -18.9667,
+                                                                        "lng": 34.35
+                                                            },
+                                                            {
+                                                                        "sr": 22,
+                                                                        "place": "Kruger National Park",
+                                                                        "lat": -23.9884,
+                                                                        "lng": 31.5547
+                                                            }
+                                                ]
+                                    }
+                        ]
+            },
+            "canary": {
+                        "name": "Gray-headed Canary-Flycatcher",
+                        "sciName": "Culicicapa ceylonensis",
+                        "trivia": [
+                            "Climbs up to 3,000 m in summer mountains, then drops to warmer plains in winter.",
+                            "Perches quietly in shade and zips out for acrobatic mid-air bug catches.",
+                            "Chirps like a forest scout that guides mixed flocks of small birds."
+                        ],
+                        "color": "#3b82f6",
+                        "photo": "https://commons.wikimedia.org/wiki/Special:FilePath/Culicicapa_ceylonensis_-_Mae_Wong.jpg?width=800",
+                        "routes": [
+                                    {
+                                                "routeName": "Gray Headed Canary Route 1",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 23,
+                                                                        "place": "Dachigam National Park",
+                                                                        "lat": 34.1333,
+                                                                        "lng": 75.0333
+                                                            },
+                                                            {
+                                                                        "sr": 24,
+                                                                        "place": "Patnitop Park",
+                                                                        "lat": 33.0815,
+                                                                        "lng": 75.3338
+                                                            },
+                                                            {
+                                                                        "sr": 25,
+                                                                        "place": "The Great Himalayan National Park",
+                                                                        "lat": 31.73,
+                                                                        "lng": 77.35
+                                                            },
+                                                            {
+                                                                        "sr": 26,
+                                                                        "place": "Rajaji National Park",
+                                                                        "lat": 30.05,
+                                                                        "lng": 78.1667
+                                                            },
+                                                            {
+                                                                        "sr": 27,
+                                                                        "place": "Sattal & Pangot Oak Forests (Nainital)",
+                                                                        "lat": 29.3492,
+                                                                        "lng": 79.5319
+                                                            },
+                                                            {
+                                                                        "sr": 28,
+                                                                        "place": "Katarniaghat Wildlife Sanctuary",
+                                                                        "lat": 28.3333,
+                                                                        "lng": 81.1333
+                                                            },
+                                                            {
+                                                                        "sr": 29,
+                                                                        "place": "Shivapuri Nagarjun National Park",
+                                                                        "lat": 27.8,
+                                                                        "lng": 85.3833
+                                                            },
+                                                            {
+                                                                        "sr": 30,
+                                                                        "place": "Fambong Lho Wildlife Sanctuary",
+                                                                        "lat": 27.3667,
+                                                                        "lng": 88.5333
+                                                            },
+                                                            {
+                                                                        "sr": 31,
+                                                                        "place": "Jigme Dorji National Park",
+                                                                        "lat": 27.75,
+                                                                        "lng": 89.8667
+                                                            },
+                                                            {
+                                                                        "sr": 32,
+                                                                        "place": "Namdapha National Park",
+                                                                        "lat": 27.4833,
+                                                                        "lng": 96.3833
+                                                            },
+                                                            {
+                                                                        "sr": 33,
+                                                                        "place": "Xishuangbanna National Nature Reserve",
+                                                                        "lat": 21.9333,
+                                                                        "lng": 101.25
+                                                            },
+                                                            {
+                                                                        "sr": 34,
+                                                                        "place": "Ban Thong Khang Woodlands",
+                                                                        "lat": 17.9757,
+                                                                        "lng": 102.6331
+                                                            },
+                                                            {
+                                                                        "sr": 35,
+                                                                        "place": "Angakor Archeological Park",
+                                                                        "lat": 13.4347,
+                                                                        "lng": 103.8892
+                                                            },
+                                                            {
+                                                                        "sr": 36,
+                                                                        "place": "Keo Seima Wildlife Sanctuary",
+                                                                        "lat": 12.1833,
+                                                                        "lng": 106.9167
+                                                            }
+                                                ]
+                                    },
+                                    {
+                                                "routeName": "Gray Headed Canary Route 2",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 37,
+                                                                        "place": "Dachigam National Park",
+                                                                        "lat": 34.1333,
+                                                                        "lng": 75.0333
+                                                            },
+                                                            {
+                                                                        "sr": 38,
+                                                                        "place": "Patnitop Park",
+                                                                        "lat": 33.0815,
+                                                                        "lng": 75.3338
+                                                            },
+                                                            {
+                                                                        "sr": 39,
+                                                                        "place": "The Great Himalayan National Park",
+                                                                        "lat": 31.73,
+                                                                        "lng": 77.35
+                                                            },
+                                                            {
+                                                                        "sr": 40,
+                                                                        "place": "Rajaji National Park",
+                                                                        "lat": 30.05,
+                                                                        "lng": 78.1667
+                                                            },
+                                                            {
+                                                                        "sr": 41,
+                                                                        "place": "Asola Bhatti Wildlife Sanctuary & Aravalli Biodiversity Park",
+                                                                        "lat": 28.4917,
+                                                                        "lng": 77.2667
+                                                            },
+                                                            {
+                                                                        "sr": 42,
+                                                                        "place": "Keoladeo National Park",
+                                                                        "lat": 27.1593,
+                                                                        "lng": 77.5232
+                                                            },
+                                                            {
+                                                                        "sr": 43,
+                                                                        "place": "Ranthambore National Park",
+                                                                        "lat": 26.0173,
+                                                                        "lng": 76.5026
+                                                            },
+                                                            {
+                                                                        "sr": 44,
+                                                                        "place": "Pada Ghati",
+                                                                        "lat": 22.552,
+                                                                        "lng": 75.975
+                                                            },
+                                                            {
+                                                                        "sr": 45,
+                                                                        "place": "Tapi Riverine Grooves",
+                                                                        "lat": 21.124,
+                                                                        "lng": 72.735
+                                                            },
+                                                            {
+                                                                        "sr": 46,
+                                                                        "place": "Gangapur Forest Nursery",
+                                                                        "lat": 20.025,
+                                                                        "lng": 73.71
+                                                            },
+                                                            {
+                                                                        "sr": 47,
+                                                                        "place": "Empress Botanical Garden Pune",
+                                                                        "lat": 18.515,
+                                                                        "lng": 73.898
+                                                            },
+                                                            {
+                                                                        "sr": 48,
+                                                                        "place": "Mhadei Wildlife Sanctuary",
+                                                                        "lat": 15.65,
+                                                                        "lng": 74.18
+                                                            },
+                                                            {
+                                                                        "sr": 49,
+                                                                        "place": "Bhadra Wildlife Sanctuary & Kudremukh",
+                                                                        "lat": 13.4833,
+                                                                        "lng": 75.6333
+                                                            },
+                                                            {
+                                                                        "sr": 50,
+                                                                        "place": "Government Botanical Garden",
+                                                                        "lat": 11.4131,
+                                                                        "lng": 76.6951
+                                                            },
+                                                            {
+                                                                        "sr": 51,
+                                                                        "place": "Thattekkad Bird Sanctuary",
+                                                                        "lat": 10.13,
+                                                                        "lng": 76.6833
+                                                            }
+                                                ]
+                                    }
+                        ]
+            },
+            "starling": {
+                        "name": "Chestnut-tailed Starling",
+                        "sciName": "Sturnia malabarica",
+                        "trivia": [
+                            "Sips nectar from blooming Silk Cotton trees with golden pollen on its forehead.",
+                            "Mimics whistles and forest bird calls with lively chatter.",
+                            "Nests inside natural tree hollows and old woodpecker holes."
+                        ],
+                        "color": "#22c55e",
+                        "photo": "https://commons.wikimedia.org/wiki/Special:FilePath/Grey-headed_myna_(Sturnia_malabarica).jpg?width=800",
+                        "routes": [
+                                    {
+                                                "routeName": "Chestnut tailed Starling Route 1",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 52,
+                                                                        "place": "Namdapha National Park",
+                                                                        "lat": 27.4833,
+                                                                        "lng": 96.3833
+                                                            },
+                                                            {
+                                                                        "sr": 53,
+                                                                        "place": "Gaoligongshan National Nature Reserve",
+                                                                        "lat": 25.3,
+                                                                        "lng": 98.7833
+                                                            },
+                                                            {
+                                                                        "sr": 54,
+                                                                        "place": "Xishuangbanna Tropical Botanical Garden & Reserve",
+                                                                        "lat": 21.9333,
+                                                                        "lng": 101.25
+                                                            },
+                                                            {
+                                                                        "sr": 55,
+                                                                        "place": "Nam Et-Phou Louey National Park",
+                                                                        "lat": 20.2167,
+                                                                        "lng": 103.5333
+                                                            },
+                                                            {
+                                                                        "sr": 56,
+                                                                        "place": "Chhep Wildlife Sanctuary",
+                                                                        "lat": 13.9167,
+                                                                        "lng": 105.2833
+                                                            },
+                                                            {
+                                                                        "sr": 57,
+                                                                        "place": "Cat Tien National Park",
+                                                                        "lat": 11.4222,
+                                                                        "lng": 107.4278
+                                                            }
+                                                ]
+                                    },
+                                    {
+                                                "routeName": "Chestnut tailed Starling Route 2",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 58,
+                                                                        "place": "Simbalbara National Park",
+                                                                        "lat": 30.4333,
+                                                                        "lng": 77.4833
+                                                            },
+                                                            {
+                                                                        "sr": 59,
+                                                                        "place": "Jim Corbett National Park & Buffer Forests",
+                                                                        "lat": 29.53,
+                                                                        "lng": 78.7747
+                                                            },
+                                                            {
+                                                                        "sr": 60,
+                                                                        "place": "Sur Sarovar Bird Sanctuary",
+                                                                        "lat": 27.2533,
+                                                                        "lng": 77.8439
+                                                            },
+                                                            {
+                                                                        "sr": 61,
+                                                                        "place": "Mohari Pond",
+                                                                        "lat": 23.1686,
+                                                                        "lng": 79.9339
+                                                            },
+                                                            {
+                                                                        "sr": 62,
+                                                                        "place": "Pachmarhi Biosphere Reserve",
+                                                                        "lat": 22.4667,
+                                                                        "lng": 78.4333
+                                                            },
+                                                            {
+                                                                        "sr": 63,
+                                                                        "place": "Pench Tiger Reserve",
+                                                                        "lat": 21.7667,
+                                                                        "lng": 79.3167
+                                                            },
+                                                            {
+                                                                        "sr": 64,
+                                                                        "place": "Gorewada Reserve",
+                                                                        "lat": 21.189,
+                                                                        "lng": 79.043
+                                                            },
+                                                            {
+                                                                        "sr": 65,
+                                                                        "place": "Katepurna Wildlife Sanctuary",
+                                                                        "lat": 20.7519,
+                                                                        "lng": 77.1054
+                                                            },
+                                                            {
+                                                                        "sr": 66,
+                                                                        "place": "Gautamela Autraghat Sanctuary",
+                                                                        "lat": 20.378066,
+                                                                        "lng": 75.269882
+                                                            },
+                                                            {
+                                                                        "sr": 67,
+                                                                        "place": "Nandur Madhameshwar Bird Sanctuary",
+                                                                        "lat": 20.025,
+                                                                        "lng": 74.115
+                                                            },
+                                                            {
+                                                                        "sr": 68,
+                                                                        "place": "Karnala Bird Sanctuary",
+                                                                        "lat": 18.8833,
+                                                                        "lng": 73.1167
+                                                            },
+                                                            {
+                                                                        "sr": 69,
+                                                                        "place": "Amboli-Tilari Reserve Forest",
+                                                                        "lat": 15.9667,
+                                                                        "lng": 74.0
+                                                            },
+                                                            {
+                                                                        "sr": 70,
+                                                                        "place": "Bondla & Netravali Wildlife Sanctuaries",
+                                                                        "lat": 15.4333,
+                                                                        "lng": 74.1
+                                                            },
+                                                            {
+                                                                        "sr": 71,
+                                                                        "place": "Dandeli Wildlife Sanctuary (Kali Tiger Reserve)",
+                                                                        "lat": 15.25,
+                                                                        "lng": 74.6167
+                                                            },
+                                                            {
+                                                                        "sr": 72,
+                                                                        "place": "Mangalore University",
+                                                                        "lat": 12.815,
+                                                                        "lng": 74.925
+                                                            },
+                                                            {
+                                                                        "sr": 73,
+                                                                        "place": "Dharmsala",
+                                                                        "lat": 11.985,
+                                                                        "lng": 75.365
+                                                            },
+                                                            {
+                                                                        "sr": 74,
+                                                                        "place": "Thattekkad Bird Sanctuary",
+                                                                        "lat": 10.13,
+                                                                        "lng": 76.6833
+                                                            },
+                                                            {
+                                                                        "sr": 75,
+                                                                        "place": "Periyar Tiger Reserve",
+                                                                        "lat": 9.4622,
+                                                                        "lng": 77.2368
+                                                            },
+                                                            {
+                                                                        "sr": 76,
+                                                                        "place": "Kanyakumari Wildlife Sanctuary",
+                                                                        "lat": 8.395,
+                                                                        "lng": 77.415
+                                                            }
+                                                ]
+                                    }
+                        ]
+            },
+            "flamingo": {
+                        "name": "Greater Flamingo",
+                        "sciName": "Phoenicopterus roseus",
+                        "trivia": [
+                            "Born grey-white—turns rosy pink from shrimp and algae pigments in its diet.",
+                            "Feeds with its curved bill upside-down to strain tiny lake life.",
+                            "Thrives in salty lakes and mudflats from Kazakhstan to Kutch and Mumbai."
+                        ],
+                        "color": "#ec4899",
+                        "photo": "https://commons.wikimedia.org/wiki/Special:FilePath/Phoenicopterus_roseus_Luc_Viatour.jpg?width=800",
+                        "routes": [
+                                    {
+                                                "routeName": "Greater Flamingo Route 1",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 77,
+                                                                        "place": "Korgalzhyn State Nature Reserve (Tengiz Lake)",
+                                                                        "lat": 50.4333,
+                                                                        "lng": 69.25
+                                                            },
+                                                            {
+                                                                        "sr": 78,
+                                                                        "place": "North Aral Sea",
+                                                                        "lat": 46.1,
+                                                                        "lng": 60.85
+                                                            },
+                                                            {
+                                                                        "sr": 79,
+                                                                        "place": "Sudochye Lake System",
+                                                                        "lat": 43.5167,
+                                                                        "lng": 58.4833
+                                                            },
+                                                            {
+                                                                        "sr": 80,
+                                                                        "place": "Shardara Reservoir",
+                                                                        "lat": 41.25,
+                                                                        "lng": 67.9667
+                                                            },
+                                                            {
+                                                                        "sr": 81,
+                                                                        "place": "Dashte Nawur Lake",
+                                                                        "lat": 33.55,
+                                                                        "lng": 67.7833
+                                                            },
+                                                            {
+                                                                        "sr": 82,
+                                                                        "place": "Hamoun Wetlands",
+                                                                        "lat": 31.3,
+                                                                        "lng": 61.5
+                                                            },
+                                                            {
+                                                                        "sr": 83,
+                                                                        "place": "Sonmiani Bay (Miani Hor)",
+                                                                        "lat": 25.43,
+                                                                        "lng": 66.5
+                                                            },
+                                                            {
+                                                                        "sr": 84,
+                                                                        "place": "Keenjhar Lake & Indus Delta Wetlands",
+                                                                        "lat": 24.95,
+                                                                        "lng": 68.05
+                                                            },
+                                                            {
+                                                                        "sr": 85,
+                                                                        "place": "Flamingo City & Great Rann of Kutch",
+                                                                        "lat": 24.0833,
+                                                                        "lng": 69.8
+                                                            },
+                                                            {
+                                                                        "sr": 86,
+                                                                        "place": "Khijadiya Bird Sanctuary (Jamnagar)",
+                                                                        "lat": 22.5236,
+                                                                        "lng": 70.1453
+                                                            },
+                                                            {
+                                                                        "sr": 87,
+                                                                        "place": "Thane Creek Flamingo Sanctuary (Mumbai)",
+                                                                        "lat": 19.1167,
+                                                                        "lng": 72.9667
+                                                            },
+                                                            {
+                                                                        "sr": 88,
+                                                                        "place": "Bhigwan Bird Sanctuary (Ujani Dam Backwaters)",
+                                                                        "lat": 18.3,
+                                                                        "lng": 74.7667
+                                                            },
+                                                            {
+                                                                        "sr": 89,
+                                                                        "place": "Mayani Bird Sanctuary",
+                                                                        "lat": 17.438,
+                                                                        "lng": 74.568
+                                                            },
+                                                            {
+                                                                        "sr": 90,
+                                                                        "place": "Krishna River",
+                                                                        "lat": 16.535,
+                                                                        "lng": 75.15
+                                                            },
+                                                            {
+                                                                        "sr": 91,
+                                                                        "place": "Kali River Estuary & Aghanashini Mudflats",
+                                                                        "lat": 14.84,
+                                                                        "lng": 74.125
+                                                            },
+                                                            {
+                                                                        "sr": 92,
+                                                                        "place": "Ranganathittu Bird Sanctuary",
+                                                                        "lat": 12.425,
+                                                                        "lng": 76.655
+                                                            },
+                                                            {
+                                                                        "sr": 93,
+                                                                        "place": "Point Calimere Wildlife & Bird Sanctuary",
+                                                                        "lat": 10.3,
+                                                                        "lng": 79.85
+                                                            },
+                                                            {
+                                                                        "sr": 94,
+                                                                        "place": "Greater Flamingo Sanctuary (Dhanushkodi)",
+                                                                        "lat": 9.1833,
+                                                                        "lng": 79.4167
+                                                            }
+                                                ]
+                                    },
+                                    {
+                                                "routeName": "Greater Flamingo Route 2",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 95,
+                                                                        "place": "Chott el Djerid",
+                                                                        "lat": 33.7,
+                                                                        "lng": 8.4333
+                                                            },
+                                                            {
+                                                                        "sr": 96,
+                                                                        "place": "Thyna Saltpans",
+                                                                        "lat": 34.65,
+                                                                        "lng": 10.7167
+                                                            },
+                                                            {
+                                                                        "sr": 97,
+                                                                        "place": "Vendicari Nature Reserve & Saline di Priolo",
+                                                                        "lat": 36.8,
+                                                                        "lng": 15.095
+                                                            },
+                                                            {
+                                                                        "sr": 98,
+                                                                        "place": "Margherita di Savoia Saltpans Nature Reserve",
+                                                                        "lat": 41.3833,
+                                                                        "lng": 16.0833
+                                                            },
+                                                            {
+                                                                        "sr": 99,
+                                                                        "place": "Po Delta Regional Park & Comacchio Valleys",
+                                                                        "lat": 44.6167,
+                                                                        "lng": 12.1667
+                                                            },
+                                                            {
+                                                                        "sr": 100,
+                                                                        "place": "Camargue Regional Nature Park (Étang de Vaccarès)",
+                                                                        "lat": 43.5333,
+                                                                        "lng": 4.5833
+                                                            },
+                                                            {
+                                                                        "sr": 101,
+                                                                        "place": "Fuente de Piedra Lagoon Nature Reserve",
+                                                                        "lat": 37.1167,
+                                                                        "lng": -4.7667
+                                                            },
+                                                            {
+                                                                        "sr": 102,
+                                                                        "place": "Merja Zerga Biological Reserve",
+                                                                        "lat": 34.85,
+                                                                        "lng": -6.2833
+                                                            },
+                                                            {
+                                                                        "sr": 103,
+                                                                        "place": "Souss-Massa National Park",
+                                                                        "lat": 30.0833,
+                                                                        "lng": -9.65
+                                                            },
+                                                            {
+                                                                        "sr": 104,
+                                                                        "place": "Banc d'Arguin National Park",
+                                                                        "lat": 20.2333,
+                                                                        "lng": -16.25
+                                                            },
+                                                            {
+                                                                        "sr": 105,
+                                                                        "place": "Diawling National Park",
+                                                                        "lat": 16.4167,
+                                                                        "lng": -16.35
+                                                            }
+                                                ]
+                                    }
+                        ]
+            },
+            "drongo": {
+                        "name": "Ashy Drongo",
+                        "sciName": "Dicrurus leucophaeus",
+                        "trivia": [
+                            "Weighs just ~40 g yet boldly chases away crows, hawks, and owls!",
+                            "Mimics alarm calls—and even cat mews—to trick rivals out of food.",
+                            "Follows two Asian paths: Himalayan routes to South India and China routes to Sumatra."
+                        ],
+                        "color": "#a855f7",
+                        "photo": "https://commons.wikimedia.org/wiki/Special:FilePath/Ashy_Drongo_(Dicrurus_leucophaeus).jpg?width=800",
+                        "routes": [
+                                    {
+                                                "routeName": "Ashy Drongo Route 1",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 106,
+                                                                        "place": "Nuristan National Park",
+                                                                        "lat": 35.2,
+                                                                        "lng": 70.7
+                                                            },
+                                                            {
+                                                                        "sr": 107,
+                                                                        "place": "Ushu Forst",
+                                                                        "lat": 35.4782,
+                                                                        "lng": 72.5885
+                                                            },
+                                                            {
+                                                                        "sr": 108,
+                                                                        "place": "Machiara National Park",
+                                                                        "lat": 34.5167,
+                                                                        "lng": 73.6167
+                                                            },
+                                                            {
+                                                                        "sr": 109,
+                                                                        "place": "Dachigam National Park",
+                                                                        "lat": 34.1372,
+                                                                        "lng": 75.0378
+                                                            },
+                                                            {
+                                                                        "sr": 110,
+                                                                        "place": "Great Himalayan National Park",
+                                                                        "lat": 31.7333,
+                                                                        "lng": 77.5833
+                                                            },
+                                                            {
+                                                                        "sr": 111,
+                                                                        "place": "Sattal & Pangot Oak Forests (Nainital)",
+                                                                        "lat": 29.3492,
+                                                                        "lng": 79.5319
+                                                            },
+                                                            {
+                                                                        "sr": 112,
+                                                                        "place": "Sur Sarovar National Bird Sanctuary",
+                                                                        "lat": 27.2533,
+                                                                        "lng": 77.8439
+                                                            },
+                                                            {
+                                                                        "sr": 113,
+                                                                        "place": "National Chambal Sanctuary",
+                                                                        "lat": 26.7683,
+                                                                        "lng": 78.6444
+                                                            },
+                                                            {
+                                                                        "sr": 114,
+                                                                        "place": "Satpura Tiger Reserve",
+                                                                        "lat": 22.5,
+                                                                        "lng": 78.4333
+                                                            },
+                                                            {
+                                                                        "sr": 115,
+                                                                        "place": "Melghat Tiger Reserve",
+                                                                        "lat": 21.4458,
+                                                                        "lng": 77.1972
+                                                            },
+                                                            {
+                                                                        "sr": 116,
+                                                                        "place": "Nandur Madhmeshwar Bird Sanctuary",
+                                                                        "lat": 19.9833,
+                                                                        "lng": 74.0305
+                                                            },
+                                                            {
+                                                                        "sr": 117,
+                                                                        "place": "Kalsubai Harishchandragad Sanctuary",
+                                                                        "lat": 19.5389,
+                                                                        "lng": 73.76
+                                                            },
+                                                            {
+                                                                        "sr": 118,
+                                                                        "place": "Bhimashankar Wildlife Sanctuary",
+                                                                        "lat": 19.0722,
+                                                                        "lng": 73.5356
+                                                            },
+                                                            {
+                                                                        "sr": 119,
+                                                                        "place": "Mahabaleshwar & Koyna Wildlife Sanctuary",
+                                                                        "lat": 17.9237,
+                                                                        "lng": 73.6586
+                                                            },
+                                                            {
+                                                                        "sr": 120,
+                                                                        "place": "Bhagwan Mahaveer Wildlife Sanctuary (Mollem)",
+                                                                        "lat": 15.3789,
+                                                                        "lng": 74.2275
+                                                            },
+                                                            {
+                                                                        "sr": 121,
+                                                                        "place": "Nagarhole National Park",
+                                                                        "lat": 12.0314,
+                                                                        "lng": 76.1206
+                                                            },
+                                                            {
+                                                                        "sr": 122,
+                                                                        "place": "Bandipur National Park",
+                                                                        "lat": 11.6664,
+                                                                        "lng": 76.6292
+                                                            },
+                                                            {
+                                                                        "sr": 123,
+                                                                        "place": "Silent Valley National Park",
+                                                                        "lat": 11.1333,
+                                                                        "lng": 76.4333
+                                                            },
+                                                            {
+                                                                        "sr": 124,
+                                                                        "place": "Periyar Tiger Reserve",
+                                                                        "lat": 9.4622,
+                                                                        "lng": 77.2368
+                                                            },
+                                                            {
+                                                                        "sr": 125,
+                                                                        "place": "Horton Plains National Park",
+                                                                        "lat": 6.8094,
+                                                                        "lng": 80.8025
+                                                            }
+                                                ]
+                                    },
+                                    {
+                                                "routeName": "Ashy Drongo Route 2",
+                                                "stops": [
+                                                            {
+                                                                        "sr": 126,
+                                                                        "place": "Baihuashan National Nature Reserve",
+                                                                        "lat": 39.8333,
+                                                                        "lng": 115.5667
+                                                            },
+                                                            {
+                                                                        "sr": 127,
+                                                                        "place": "Wolong National Nature Reserve",
+                                                                        "lat": 31.0333,
+                                                                        "lng": 103.1667
+                                                            },
+                                                            {
+                                                                        "sr": 128,
+                                                                        "place": "Gaoligongshan National Nature Reserve",
+                                                                        "lat": 25.5,
+                                                                        "lng": 98.7
+                                                            },
+                                                            {
+                                                                        "sr": 129,
+                                                                        "place": "Ailaoshan National Nature Reserve",
+                                                                        "lat": 24.5333,
+                                                                        "lng": 101.0167
+                                                            },
+                                                            {
+                                                                        "sr": 130,
+                                                                        "place": "Doi Chiang Dao Wildlife Sanctuary",
+                                                                        "lat": 19.3833,
+                                                                        "lng": 98.9167
+                                                            },
+                                                            {
+                                                                        "sr": 131,
+                                                                        "place": "Kaeng Krachan National Park",
+                                                                        "lat": 12.8833,
+                                                                        "lng": 99.45
+                                                            },
+                                                            {
+                                                                        "sr": 132,
+                                                                        "place": "Fraser's Hill (Bukit Fraser) Forest Reserve",
+                                                                        "lat": 3.7119,
+                                                                        "lng": 101.7367
+                                                            },
+                                                            {
+                                                                        "sr": 133,
+                                                                        "place": "Gunung Leuser National Park",
+                                                                        "lat": 3.5,
+                                                                        "lng": 97.5
+                                                            }
+                                                ]
+                                    }
+                        ]
+            }
+};
+
+
+        /* =========================================================================
+           SECTION D: SMOOTH CATMULL-ROM CURVE & EQUIDISTANT LED ENGINE
+           ========================================================================= */
+        let currentBirdKey = 'falcon';
+        /* =========================================================================
+           BUTTON CLICK SOUND FEEDBACK (WEB AUDIO API - NO EXTERNAL FILE NEEDED)
+           ========================================================================= */
+        let audioCtx = null;
+        function playClickSound(pitch = 620) {
+            try {
+                if (!audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContextClass) return;
+                    audioCtx = new AudioContextClass();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(pitch, now);
+                osc.frequency.exponentialRampToValueAtTime(pitch * 0.65, now + 0.055);
+
+                gain.gain.setValueAtTime(0.001, now);
+                gain.gain.linearRampToValueAtTime(0.12, now + 0.008);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.07);
+            } catch (err) {
+                // Ignore audio errors if browser blocks audio
+            }
+        }
+
+        /* =========================================================================
+           INTERACTIVE MAP "DID YOU KNOW?" TRIVIA POP-UP BUTTON LOGIC
+           ========================================================================= */
+        let currentTriviaIndex = 0;
+        let isTriviaOpen = false;
+
+        function updateTriviaDisplay() {
+            const bird = BIRD_ROUTES[currentBirdKey] || BIRD_ROUTES.falcon;
+            const facts = bird.trivia || [];
+            if (facts.length === 0) return;
+
+            currentTriviaIndex = currentTriviaIndex % facts.length;
+            const btn = document.getElementById('btnDidYouKnow');
+            const card = document.getElementById('mapTriviaCard');
+            const badge = document.getElementById('triviaBadge');
+            const header = document.getElementById('mapTriviaHeader');
+            const speciesLabel = document.getElementById('mapTriviaSpecies');
+            const textEl = document.getElementById('mapTriviaText');
+            const counterEl = document.getElementById('mapTriviaCounter');
+            const nextBtn = document.getElementById('btnNextTrivia');
+
+            btn.style.borderColor = bird.color;
+            card.style.borderColor = bird.color;
+            nextBtn.style.background = bird.color;
+            nextBtn.style.color = '#ffffff';
+            header.style.color = bird.color;
+
+            badge.innerText = `${currentTriviaIndex + 1}/${facts.length}`;
+            speciesLabel.innerText = `${bird.name} • Fact ${currentTriviaIndex + 1}/${facts.length}`;
+            textEl.innerText = facts[currentTriviaIndex];
+            counterEl.innerText = 'Click for another trivia';
+        }
+
+        function handleDidYouKnowClick(e) {
+            if (e) e.stopPropagation();
+            playClickSound(720);
+            const card = document.getElementById('mapTriviaCard');
+            if (!isTriviaOpen) {
+                isTriviaOpen = true;
+                card.classList.add('open');
+                updateTriviaDisplay();
+            } else {
+                const bird = BIRD_ROUTES[currentBirdKey] || BIRD_ROUTES.falcon;
+                const totalFacts = (bird.trivia || []).length || 1;
+                currentTriviaIndex = (currentTriviaIndex + 1) % totalFacts;
+                updateTriviaDisplay();
+            }
+        }
+
+        function cycleTriviaFact(e) {
+            if (e) e.stopPropagation();
+            playClickSound(780);
+            const bird = BIRD_ROUTES[currentBirdKey] || BIRD_ROUTES.falcon;
+            const totalFacts = (bird.trivia || []).length || 1;
+            currentTriviaIndex = (currentTriviaIndex + 1) % totalFacts;
+            updateTriviaDisplay();
+        }
+
+        function closeTriviaCard(e) {
+            if (e) e.stopPropagation();
+            playClickSound(480);
+            isTriviaOpen = false;
+            document.getElementById('mapTriviaCard').classList.remove('open');
+        }
+
+        let activeLayers = [];
+        let routeAnimations = []; // Holds animation state for 1 or 2 simultaneous routes
+        let animationTimer = null;
+
+        // 1. Generates a smooth, seamless Catmull-Rom spline through your exact Excel stops
+        function buildSmoothCurvedPath(stops, tension = 0.35, samplesPerSegment = 24) {
+            if (stops.length < 2) return stops.map(s => ({ lat: s.lat, lng: s.lng }));
+
+            const pts = [stops[0], ...stops, stops[stops.length - 1]];
+            const curvePoints = [];
+
+            for (let i = 1; i < pts.length - 2; i++) {
+                const p0 = pts[i - 1];
+                const p1 = pts[i];
+                const p2 = pts[i + 1];
+                const p3 = pts[i + 2];
+
+                for (let step = 0; step < samplesPerSegment; step++) {
+                    const t = step / samplesPerSegment;
+                    const t2 = t * t;
+                    const t3 = t2 * t;
+
+                    const m1Lat = tension * (p2.lat - p0.lat);
+                    const m1Lng = tension * (p2.lng - p0.lng);
+                    const m2Lat = tension * (p3.lat - p1.lat);
+                    const m2Lng = tension * (p3.lng - p1.lng);
+
+                    const h00 = 2 * t3 - 3 * t2 + 1;
+                    const h10 = t3 - 2 * t2 + t;
+                    const h01 = -2 * t3 + 3 * t2;
+                    const h11 = t3 - t2;
+
+                    curvePoints.push({
+                        lat: h00 * p1.lat + h10 * m1Lat + h01 * p2.lat + h11 * m2Lat,
+                        lng: h00 * p1.lng + h10 * m1Lng + h01 * p2.lng + h11 * m2Lng
+                    });
+                }
+            }
+            curvePoints.push({ lat: stops[stops.length - 1].lat, lng: stops[stops.length - 1].lng });
+            return curvePoints;
+        }
+
+        // 2. Resamples the smooth curve into well-spaced equidistant LED positions AND
+        //    guarantees 100% of your exact Excel sanctuary/reserve coordinates are preserved
+        //    in exact order (never skipped or merged, even when two sanctuaries are nearby!)
+        function createEquidistantRouteDots(stops, routeName) {
+            const samplesPerSeg = 28;
+            const denseCurve = buildSmoothCurvedPath(stops, LED_SETTINGS.curveTension, samplesPerSeg);
+
+            // Calculate cumulative arc length along the curved spline
+            const cumDist = [0];
+            for (let i = 1; i < denseCurve.length; i++) {
+                const dLat = denseCurve[i].lat - denseCurve[i - 1].lat;
+                const dLng = denseCurve[i].lng - denseCurve[i - 1].lng;
+                cumDist.push(cumDist[i - 1] + Math.sqrt(dLat * dLat + dLng * dLng));
+            }
+            const totalLength = cumDist[cumDist.length - 1];
+            const numEqDots = Math.max(stops.length, Math.round(totalLength / LED_SETTINGS.dotSpacingDeg));
+
+            // Generate equidistant spacer nodes with their exact arc-length position `dist`
+            const spacerDots = [];
+            let searchIdx = 0;
+            for (let k = 0; k <= numEqDots; k++) {
+                const targetDist = (k / numEqDots) * totalLength;
+                while (searchIdx < cumDist.length - 2 && cumDist[searchIdx + 1] < targetDist) {
+                    searchIdx++;
+                }
+                const segLen = cumDist[searchIdx + 1] - cumDist[searchIdx];
+                const ratio = segLen === 0 ? 0 : (targetDist - cumDist[searchIdx]) / segLen;
+
+                spacerDots.push({
+                    dist: targetDist,
+                    lat: denseCurve[searchIdx].lat + (denseCurve[searchIdx + 1].lat - denseCurve[searchIdx].lat) * ratio,
+                    lng: denseCurve[searchIdx].lng + (denseCurve[searchIdx + 1].lng - denseCurve[searchIdx].lng) * ratio,
+                    isPinpoint: false,
+                    place: null,
+                    sr: null,
+                    routeName: routeName
+                });
+            }
+
+            // Build exact pinpoint nodes for EVERY SINGLE Excel stop using its exact spline arc-length
+            const pinpointDots = stops.map((stop, stopIdx) => {
+                const curveIdx = Math.min(stopIdx * samplesPerSeg, cumDist.length - 1);
+                return {
+                    dist: cumDist[curveIdx],
+                    lat: stop.lat,
+                    lng: stop.lng,
+                    isPinpoint: true,
+                    place: stop.place,
+                    sr: stop.sr,
+                    stopNumber: stopIdx + 1,
+                    routeName: routeName
+                };
+            });
+
+            // Filter out any spacer dot that falls too close (< 45% of spacing) to an actual sanctuary stop
+            // so the visual rhythm stays clean & uncrowded while EVERY user stop remains 100% intact!
+            const minClearance = LED_SETTINGS.dotSpacingDeg * 0.45;
+            const filteredSpacers = spacerDots.filter(sp =>
+                !pinpointDots.some(pin => Math.abs(pin.dist - sp.dist) < minClearance)
+            );
+
+            // Merge and sort strictly along the route's arc-length progression
+            const dots = [...pinpointDots, ...filteredSpacers].sort((a, b) => a.dist - b.dist);
+
+            return { denseCurve, dots };
+        }
+
+        function clearPreviousRoutes() {
+            if (animationTimer) {
+                clearInterval(animationTimer);
+                animationTimer = null;
+            }
+            activeLayers.forEach(layer => map.removeLayer(layer));
+            activeLayers = [];
+            routeAnimations = [];
+        }
+
+        function selectBird(birdKey, isUserClick = true) {
+            const bird = BIRD_ROUTES[birdKey];
+            if (!bird) return;
+
+            if (isUserClick) {
+                playClickSound(640);
+            }
+            currentBirdKey = birdKey;
+            currentTriviaIndex = 0;
+
+            clearPreviousRoutes();
+
+            // 1. Highlight active button
+            document.querySelectorAll('.btn-bird').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.querySelector(`.btn-bird[data-bird="${birdKey}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            // 2. Update Bird Photo & Profile Header
+            const photoEl = document.getElementById('birdPhoto');
+            photoEl.onerror = function() {
+                this.onerror = null;
+                this.src = bird.fallbackPhoto || 'https://commons.wikimedia.org/wiki/Special:FilePath/Falco_amurensis_-Mongolia-8.jpg?width=800';
+            };
+            photoEl.src = bird.photo;
+            photoEl.alt = bird.name;
+
+            document.getElementById('birdName').innerText = bird.name;
+            document.getElementById('birdName').style.color = bird.color;
+            document.getElementById('birdSci').innerText = bird.sciName;
+
+            updateTriviaDisplay();
+
+            const allBoundsPoints = [];
+            let totalStopsCount = 0;
+            let sidebarHtml = "";
+
+            // 3. Build & Render Every Route Assigned to This Bird (1 or 2 routes!)
+            bird.routes.forEach((routeObj, rIdx) => {
+                const { denseCurve, dots } = createEquidistantRouteDots(routeObj.stops, routeObj.routeName);
+                const curveLatLngs = denseCurve.map(p => [p.lat, p.lng]);
+                allBoundsPoints.push(...curveLatLngs);
+
+                // Smooth outer glow track along the curved migration path
+                const outerGlow = L.polyline(curveLatLngs, {
+                    color: bird.color,
+                    weight: 9,
+                    opacity: 0.16,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+                activeLayers.push(outerGlow);
+
+                // Subtle warm-white connecting filament beneath the dots
+                const innerTrack = L.polyline(curveLatLngs, {
+                    color: LED_SETTINGS.warmWhiteColor,
+                    weight: 2,
+                    opacity: 0.35,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+                activeLayers.push(innerTrack);
+
+                // Create LED markers along the smooth curve
+                const ledMarkers = [];
+                const stopMarkerMap = {};
+
+                dots.forEach((dot, dotIdx) => {
+                    const isPin = dot.isPinpoint;
+                    const marker = L.circleMarker([dot.lat, dot.lng], {
+                        radius: isPin ? LED_SETTINGS.pinpointRadius : LED_SETTINGS.stagnantRadius,
+                        fillColor: LED_SETTINGS.warmWhiteColor,
+                        color: isPin ? bird.color : '#1e293b',
+                        weight: isPin ? 2.2 : 1,
+                        fillOpacity: isPin ? 1.0 : 0.85,
+                        opacity: 1
+                    }).addTo(map);
+
+                    // Pinpoint popup showing exact sanctuary/reserve name, route, and coordinates
+                    if (isPin) {
+                        marker.bindPopup(`
+                            <div style="min-width: 190px; line-height: 1.4;">
+                                <div style="font-size: 0.72rem; text-transform: uppercase; color: ${bird.color}; font-weight: 700;">
+                                    ${routeObj.routeName} • Stop #${dot.stopNumber}
+                                </div>
+                                <div style="font-size: 0.95rem; font-weight: 700; margin: 2px 0;">
+                                    ${dot.place}
+                                </div>
+                                <div style="font-size: 0.75rem; color: #475569;">
+                                    Species: ${bird.name}<br>
+                                    Lat: ${dot.lat.toFixed(4)}, Lng: ${dot.lng.toFixed(4)}
+                                </div>
+                            </div>
+                        `);
+                        stopMarkerMap[dot.stopNumber] = marker;
+                    } else {
+                        // Interpolated curve dot popup so clicking anywhere on the curve is still informative
+                        marker.bindPopup(`
+                            <div style="line-height: 1.35;">
+                                <div style="font-size: 0.72rem; color: ${bird.color}; font-weight: 700;">${routeObj.routeName}</div>
+                                <div style="font-size: 0.82rem; font-weight: 600;">Flyway Corridor Node #${dotIdx + 1}</div>
+                                <div style="font-size: 0.72rem; color: #475569;">Lat: ${dot.lat.toFixed(4)}, Lng: ${dot.lng.toFixed(4)}</div>
+                            </div>
+                        `);
+                    }
+
+                    activeLayers.push(marker);
+                    ledMarkers.push({ marker, isPin, color: bird.color });
+                });
+
+                // Store animation controller for this route
+                routeAnimations.push({
+                    routeName: routeObj.routeName,
+                    color: bird.color,
+                    leds: ledMarkers,
+                    headIndex: 0,
+                    direction: 1
+                });
+
+                // Build sidebar list for this route (clicking any stop flies to it & opens its popup!)
+                totalStopsCount += routeObj.stops.length;
+                sidebarHtml += `
+                    <div class="route-group-header" style="border-left: 3px solid ${bird.color};">
+                        <span style="color: ${bird.color};">${routeObj.routeName}</span>
+                        <span style="color: #94a3b8;">${routeObj.stops.length} Stops</span>
+                    </div>
+                `;
+                routeObj.stops.forEach((st, sIdx) => {
+                    sidebarHtml += `
+                        <div class="waypoint-item" onclick="focusStop(${rIdx}, ${sIdx + 1}, ${st.lat}, ${st.lng})">
+                            <span class="wp-index" style="border-left: 2px solid ${bird.color};">${sIdx + 1}</span>
+                            <span class="wp-place" title="${st.place}">${st.place}</span>
+                            <span class="wp-coords">${st.lat.toFixed(2)}, ${st.lng.toFixed(2)}</span>
+                        </div>
+                    `;
+                });
+
+                routeAnimations[rIdx].stopMarkerMap = stopMarkerMap;
+            });
+
+            document.getElementById('stopCounter').innerText = `${totalStopsCount} Pinpoints (${bird.routes.length} Route${bird.routes.length > 1 ? 's' : ''})`;
+            document.getElementById('waypointList').innerHTML = sidebarHtml;
+
+            // 4. Smoothly zoom map to fit all active routes for this species
+            if (allBoundsPoints.length > 0) {
+                const isMobileView = window.innerWidth <= 950;
+                map.invalidateSize();
+                map.flyToBounds(L.latLngBounds(allBoundsPoints), {
+                    padding: isMobileView ? [24, 24] : [45, 45],
+                    duration: 1.0
+                });
+            }
+
+            // 5. Start the simultaneous TO-AND-FRO colored LED pair animation across all active routes
+            startMultiRouteAnimation(bird);
+        }
+
+        // Allows clicking any sanctuary in the right panel to zoom in and open its map pin popup
+        function focusStop(routeIdx, stopNum, lat, lng) {
+            playClickSound(580);
+            map.flyTo([lat, lng], 6, { duration: 0.8 });
+            const anim = routeAnimations[routeIdx];
+            if (anim && anim.stopMarkerMap && anim.stopMarkerMap[stopNum]) {
+                setTimeout(() => anim.stopMarkerMap[stopNum].openPopup(), 820);
+            }
+        }
+
+        function startMultiRouteAnimation(bird) {
+            const statusEl = document.getElementById('directionStatus');
+
+            function stepFrame() {
+                const activeRouteCount = routeAnimations.length;
+                const primaryDir = routeAnimations[0] ? routeAnimations[0].direction : 1;
+
+                statusEl.innerHTML = `
+                    <span>Active: <strong style="color:${bird.color}">${activeRouteCount} Route${activeRouteCount > 1 ? 's' : ''}</strong></span>
+                    <span>${primaryDir === 1 ? 'Outbound Pulse ➔' : '⬅ Return Pulse'}</span>
+                `;
+
+                routeAnimations.forEach(anim => {
+                    const total = anim.leds.length;
+                    if (total === 0) return;
+
+                    anim.leds.forEach((item, idx) => {
+                        const offset = (anim.headIndex - idx) * anim.direction;
+
+                        if (offset >= 0 && offset < LED_SETTINGS.movingLedCount) {
+                            // MOVING COLORED LED PAIR
+                            item.marker.setStyle({
+                                radius: LED_SETTINGS.movingLedRadius,
+                                fillColor: anim.color,
+                                color: '#ffffff',
+                                weight: 2.5,
+                                fillOpacity: 1,
+                                opacity: 1
+                            });
+                            item.marker.bringToFront();
+                        } else {
+                            // STAGNANT WARM-WHITE LED DOT
+                            item.marker.setStyle({
+                                radius: item.isPin ? LED_SETTINGS.pinpointRadius : LED_SETTINGS.stagnantRadius,
+                                fillColor: LED_SETTINGS.warmWhiteColor,
+                                color: item.isPin ? anim.color : '#1e293b',
+                                weight: item.isPin ? 2.2 : 1,
+                                fillOpacity: item.isPin ? 1.0 : 0.85,
+                                opacity: 1
+                            });
+                        }
+                    });
+
+                    // Move forward or backward along this route
+                    anim.headIndex += anim.direction;
+
+                    // Bounce to-and-fro at both ends independently for each route
+                    if (anim.headIndex >= total - 1) {
+                        anim.headIndex = total - 1;
+                        anim.direction = -1;
+                    } else if (anim.headIndex <= 0) {
+                        anim.headIndex = 0;
+                        anim.direction = 1;
+                    }
+                });
+            }
+
+            stepFrame();
+            animationTimer = setInterval(stepFrame, LED_SETTINGS.speedMs);
+        }
+
+
+        window.addEventListener('resize', () => {
+            clearTimeout(window.__mapResizeTimer);
+            window.__mapResizeTimer = setTimeout(() => map.invalidateSize(), 150);
+        });
+
+        // Auto-select Amur Falcon when page opens
+        window.addEventListener('DOMContentLoaded', () => {
+            selectBird('falcon', false);
+        });
+    </script>
+</body>
+</html>
